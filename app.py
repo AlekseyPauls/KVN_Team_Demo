@@ -7,6 +7,8 @@ from typing import List, NamedTuple
 import os
 import face_recognition
 import time
+import plotly.figure_factory as ff
+import pandas as pd
 
 try:
     from typing import Literal
@@ -30,7 +32,6 @@ HERE = Path(__file__).parent
 
 logger = logging.getLogger(__name__)
 
-
 WEBRTC_CLIENT_SETTINGS = ClientSettings(
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
     media_stream_constraints={"video": True, "audio": True},
@@ -46,12 +47,16 @@ def main():
     realtime_ppe_detection_page = (
         "Realtime Personal Protective Equipment detection"
     )
+    statistic_page = (
+        "Statistic information"
+    )
 
     app_mode = st.sidebar.selectbox(
         "Choose the app mode",
         [
             realtime_face_recognition_page,
-            realtime_ppe_detection_page
+            realtime_ppe_detection_page,
+            statistic_page
         ],
     )
     st.subheader(app_mode)
@@ -60,14 +65,11 @@ def main():
         app_realtime_face_recognition()
     elif app_mode == realtime_ppe_detection_page:
         app_realtime_ppe_detection()
-    elif app_mode == streaming_face_recognition_page:
-        app_streaming_face_recognition()
-    elif app_mode == streaming_ppe_detection_page:
-        app_streaming_ppe_detection()
+    elif app_mode == statistic_page:
+        app_statistic()
 
 
 def app_realtime_face_recognition():
-
     class FaceRecognitionTransformer(VideoTransformerBase):
 
         def __init__(self) -> None:
@@ -254,6 +256,28 @@ def app_realtime_ppe_detection():
         video_transformer_factory=PpeDetectionTransfromer,
         async_transform=True,
     )
+
+
+def app_statistic():
+    st.text('Сhart of recognized people')
+
+    chart_data = pd.DataFrame(
+        np.random.randn(20, 2),
+        columns=['known_persons', 'unknown_persons'])
+    st.line_chart(chart_data)
+
+    st.text('Сhart of PPE wearing')
+
+    # Add histogram data
+    x1 = np.random.randn(200) - 2
+    x2 = np.random.randn(200)
+    x3 = np.random.randn(200) + 2
+
+    hist_data = [x1, x2, x3]
+    group_labels = ['Helmet', 'Goggles', 'Vest']
+
+    fig = ff.create_distplot(hist_data, group_labels, bin_size=[.1, .25, .5])
+    st.plotly_chart(fig, use_container_width=True)
 
 
 if __name__ == "__main__":
