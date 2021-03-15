@@ -87,6 +87,9 @@ def main():
     st.header("KVN Team demo")
 
     face_recognition_page = "Real time face recognition"
+    ppe_detection_page = (
+        "Real time Personal Protective Equipment detection"
+    )
     video_filters_page = (
         "Real time video transform with simple OpenCV filters (sendrecv)"
     )
@@ -98,6 +101,7 @@ def main():
         "Choose the app mode",
         [
             face_recognition_page,
+            ppe_detection_page,
             video_filters_page,
             streaming_page,
         ],
@@ -106,6 +110,8 @@ def main():
 
     if app_mode == video_filters_page:
         app_video_filters()
+    elif app_mode == ppe_detection_page:
+        app_ppe_detection()
     elif app_mode == face_recognition_page:
         app_face_recognition()
     elif app_mode == streaming_page:
@@ -254,6 +260,121 @@ def app_face_recognition():
         "This demo uses a model and code from "
         "https://github.com/robmarkcole/object-detection-app. "
         "Many thanks to the project."
+    )
+    
+
+def app_ppe_detection():
+    class PpeDetectionTransfromer(VideoTransformerBase):
+        def __init__(self) -> None:
+            h,w = None, None
+            self.frame_cur = 0
+            self.bounding_boxes = []
+            self.confidences = []
+            self.class_numbers = []
+
+            self.network = cv2.dnn.readNetFromDarknet('./yolo/yolov3_ppe_test.cfg',
+                             './yolo/yolov3_ppe_train_9000.weights')
+
+            self.layers_names_all = self.network.getLayerNames() 
+            self.layers_names_output = [self.layers_names_all[i[0] - 1] for i in self.network.getUnconnectedOutLayers()]
+
+            with open('yolo/class.names') as f:
+                self.labels = [line.strip() for line in f]
+
+            self.colours = np.random.randint(0, 255, size=(len(self.labels), 3), dtype='uint8')
+            self.results = None
+            
+         
+        def transform(self, frame: av.VideoFrame) -> np.ndarray:
+            probability_minimum = 0.7
+            threshold = 0.3
+            bounding_boxes = []
+            confidences = []
+            class_numbers = []
+            
+            startTime = time.time()
+            nowTime = time.time()
+           
+            frame = frame.to_ndarray(format="bgr24")
+#             print('frame_shape: ', frame)
+            small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+            
+            h, w = small_frame.shape[:2]
+            
+            if self.frame_cur == 0 or self.frame_cur % 5 == 0:
+                blob = cv2.dnn.blobFromImage(small_frame, 1 / 255.0, (416, 416),
+                                         swapRB=True, crop=False)
+                self.network.setInput(blob)
+                output_from_network = self.network.forward(self.layers_names_output)
+
+
+                for result in output_from_network:
+
+                        for detected_objects in result:
+                            scores = detected_objects[5:]
+                            class_current = np.argmax(scores)
+                            confidence_current = scores[class_current]
+                            if confidence_current > probability_minimum:
+                                    box_current = detected_objects[0:4] * np.array([w, h, w, h])
+                                    x_center, y_center, box_width, box_height = box_current
+                                    x_min = int(x_center - (box_width / 2))
+                                    y_min = int(y_center - (box_height / 2))
+                                    bounding_boxes.append([x_min, y_min,
+                                               int(box_width), int(box_height)])
+                                    confidences.append(float(confidence_current))
+                                    class_numbers.append(class_current)
+                            self.bounding_boxes = bounding_boxes
+                            self.confidences = confidences
+                            self.class_numbers = class_numbers
+
+                self.results = cv2.dnn.NMSBoxes(bounding_boxes, confidences, probability_minimum, threshold)
+
+                if len(self.results) > 0:
+                    for i in self.results.flatten():
+                        x_min, y_min = 4*bounding_boxes[i][0], 4*bounding_boxes[i][1]
+                        box_width, box_height = 4*bounding_boxes[i][2], 4*bounding_boxes[i][3]
+                        colour_box_current = self.colours[class_numbers[i]].tolist()
+
+                        cv2.rectangle(frame, (x_min, y_min),
+                                  (x_min + box_width, y_min + box_height),
+                                  colour_box_current, 2)
+
+                        text_box_current = '{}: {:.4f}'.format(self.labels[int(class_numbers[i])],
+                                                           confidences[i])
+
+                        cv2.putText(frame, text_box_current, (x_min, y_min - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
+                        
+            else:
+                if len(self.results) > 0:
+                    for i in self.results.flatten():
+                        x_min, y_min = 4*self.bounding_boxes[i][0], 4*self.bounding_boxes[i][1]
+                        box_width, box_height = 4*self.bounding_boxes[i][2], 4*self.bounding_boxes[i][3]
+                        colour_box_current = self.colours[self.class_numbers[i]].tolist()
+
+                        cv2.rectangle(frame, (x_min, y_min),
+                                  (x_min + box_width, y_min + box_height),
+                                  colour_box_current, 2)
+
+                        text_box_current = '{}: {:.4f}'.format(self.labels[int(self.class_numbers[i])],
+                                                           self.confidences[i])
+
+                        cv2.putText(frame, text_box_current, (x_min, y_min - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
+                
+
+            print('FPS {:.1f}'.format(1 / (time.time() - startTime)))
+            startTime = time.time() # reset time
+            self.frame_cur += 1
+            
+            return frame
+
+    webrtc_ctx = webrtc_streamer(
+        key="ppe-detection",
+        mode=WebRtcMode.SENDRECV,
+        client_settings=WEBRTC_CLIENT_SETTINGS,
+        video_transformer_factory=PpeDetectionTransfromer,
+        async_transform=True,
     )
 
 
