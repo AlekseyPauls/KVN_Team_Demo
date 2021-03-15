@@ -31,52 +31,6 @@ HERE = Path(__file__).parent
 logger = logging.getLogger(__name__)
 
 
-# This code is based on https://github.com/streamlit/demo-self-driving/blob/230245391f2dda0cb464008195a470751c01770b/streamlit_app.py#L48  # noqa: E501
-def download_file(url, download_to: Path, expected_size=None):
-    # Don't download the file twice.
-    # (If possible, verify the download using the file length.)
-    if download_to.exists():
-        if expected_size:
-            if download_to.stat().st_size == expected_size:
-                return
-        else:
-            st.info(f"{url} is already downloaded.")
-            if not st.button("Download again?"):
-                return
-
-    download_to.parent.mkdir(parents=True, exist_ok=True)
-
-    # These are handles to two visual elements to animate.
-    weights_warning, progress_bar = None, None
-    try:
-        weights_warning = st.warning("Downloading %s..." % url)
-        progress_bar = st.progress(0)
-        with open(download_to, "wb") as output_file:
-            with urllib.request.urlopen(url) as response:
-                length = int(response.info()["Content-Length"])
-                counter = 0.0
-                MEGABYTES = 2.0 ** 20.0
-                while True:
-                    data = response.read(8192)
-                    if not data:
-                        break
-                    counter += len(data)
-                    output_file.write(data)
-
-                    # We perform animation by overwriting the elements.
-                    weights_warning.warning(
-                        "Downloading %s... (%6.2f/%6.2f MB)"
-                        % (url, counter / MEGABYTES, length / MEGABYTES)
-                    )
-                    progress_bar.progress(min(counter / length, 1.0))
-    # Finally, we remove these visual elements by calling .empty().
-    finally:
-        if weights_warning is not None:
-            weights_warning.empty()
-        if progress_bar is not None:
-            progress_bar.empty()
-
-
 WEBRTC_CLIENT_SETTINGS = ClientSettings(
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
     media_stream_constraints={"video": True, "audio": True},
@@ -86,49 +40,33 @@ WEBRTC_CLIENT_SETTINGS = ClientSettings(
 def main():
     st.header("KVN Team demo")
 
-    face_recognition_page = "Real time face recognition"
-    ppe_detection_page = (
-        "Real time Personal Protective Equipment detection"
+    realtime_face_recognition_page = (
+        "Realtime Face Recognition"
     )
-    video_filters_page = (
-        "Real time video transform with simple OpenCV filters (sendrecv)"
-    )
-    streaming_page = (
-        "Consuming media files on server-side and streaming it to browser"
+    realtime_ppe_detection_page = (
+        "Realtime Personal Protective Equipment detection"
     )
 
     app_mode = st.sidebar.selectbox(
         "Choose the app mode",
         [
-            face_recognition_page,
-            ppe_detection_page,
-            video_filters_page,
-            streaming_page,
+            realtime_face_recognition_page,
+            realtime_ppe_detection_page
         ],
     )
     st.subheader(app_mode)
 
-    if app_mode == video_filters_page:
-        app_video_filters()
-    elif app_mode == ppe_detection_page:
-        app_ppe_detection()
-    elif app_mode == face_recognition_page:
-        app_face_recognition()
-    elif app_mode == streaming_page:
-        app_streaming()
+    if app_mode == realtime_face_recognition_page:
+        app_realtime_face_recognition()
+    elif app_mode == realtime_ppe_detection_page:
+        app_realtime_ppe_detection()
+    elif app_mode == streaming_face_recognition_page:
+        app_streaming_face_recognition()
+    elif app_mode == streaming_ppe_detection_page:
+        app_streaming_ppe_detection()
 
 
-def app_face_recognition():
-    """Object detection demo with MobileNet SSD.
-        This model and code are based on
-        https://github.com/robmarkcole/object-detection-app
-        """
-
-    DEFAULT_CONFIDENCE_THRESHOLD = 0.5
-
-    class Detection(NamedTuple):
-        name: str
-        prob: float
+def app_realtime_face_recognition():
 
     class FaceRecognitionTransformer(VideoTransformerBase):
 
@@ -147,23 +85,6 @@ def app_face_recognition():
             self.result_queue = queue.Queue()
 
         def _annotate_image(self, image, face_locations, face_names):
-            #
-            #         name = CLASSES[idx]
-            #         result.append(Detection(name=name, prob=float(confidence)))
-            #
-            #         # display the prediction
-            #         label = f"{name}: {round(confidence * 100, 2)}%"
-            #         cv2.rectangle(image, (startX, startY), (endX, endY), COLORS[idx], 2)
-            #         y = startY - 15 if startY - 15 > 15 else startY + 15
-            #         cv2.putText(
-            #             image,
-            #             label,
-            #             (startX, y),
-            #             cv2.FONT_HERSHEY_SIMPLEX,
-            #             0.5,
-            #             COLORS[idx],
-            #             2,
-            #         )
             for (top, right, bottom, left), name in zip(face_locations, face_names):
                 # Scale back up face locations since the frame we detected in was scaled to 1/4 size
                 top *= 4
@@ -172,10 +93,13 @@ def app_face_recognition():
                 left *= 4
 
                 # Draw a box around the face
-                cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 2)
+                if name != "Unknown":
+                    cv2.rectangle(image, (left, top), (right, bottom), (0, 255, 0), 2)
+                    cv2.rectangle(image, (left, bottom - 35), (right, bottom), (0, 255, 0), cv2.FILLED)
+                else:
+                    cv2.rectangle(image, (left, top), (right, bottom), (0, 0, 255), 2)
+                    cv2.rectangle(image, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
 
-                # Draw a label with a name below the face
-                cv2.rectangle(image, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED)
                 font = cv2.FONT_HERSHEY_DUPLEX
                 cv2.putText(image, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
 
@@ -202,11 +126,6 @@ def app_face_recognition():
                     matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
                     name = "Unknown"
 
-                    # # If a match was found in known_face_encodings, just use the first one.
-                    # if True in matches:
-                    #     first_match_index = matches.index(True)
-                    #     name = self.known_self.face_names[first_match_index]
-
                     # Or instead, use the known face with the smallest distance to the new face
                     face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
                     best_match_index = np.argmin(face_distances)
@@ -216,10 +135,6 @@ def app_face_recognition():
                     self.face_names.append(name)
 
             annotated_image, result = self._annotate_image(image, face_locations, self.face_names)
-            self.cur_annotated_image = annotated_image
-
-            # NOTE: This `transform` method is called in another thread,
-            # so it must be thread-safe.
             self.result_queue.put(result)
 
             end = time.time()
@@ -227,7 +142,7 @@ def app_face_recognition():
 
             return annotated_image
 
-    webrtc_ctx = webrtc_streamer(
+    webrtc_streamer(
         key="face-recognition",
         mode=WebRtcMode.SENDRECV,
         client_settings=WEBRTC_CLIENT_SETTINGS,
@@ -235,47 +150,19 @@ def app_face_recognition():
         async_transform=True,
     )
 
-    confidence_threshold = st.slider(
-        "Confidence threshold", 0.0, 1.0, DEFAULT_CONFIDENCE_THRESHOLD, 0.05
-    )
-    if webrtc_ctx.video_transformer:
-        webrtc_ctx.video_transformer.confidence_threshold = confidence_threshold
 
-    # if st.checkbox("Show the detected labels", value=True):
-    #     if webrtc_ctx.state.playing:
-    #         labels_placeholder = st.empty()
-    #         # NOTE: The video transformation with object detection and
-    #         # this loop displaying the result labels are running
-    #         # in different threads asynchronously.
-    #         # Then the rendered video frames and the labels displayed here
-    #         # are not strictly synchronized.
-    #         while True:
-    #             if webrtc_ctx.video_transformer:
-    #                 result = webrtc_ctx.video_transformer.result_queue.get()
-    #                 labels_placeholder.table(result)
-    #             else:
-    #                 break
-
-    st.markdown(
-        "This demo uses a model and code from "
-        "https://github.com/robmarkcole/object-detection-app. "
-        "Many thanks to the project."
-    )
-    
-
-def app_ppe_detection():
+def app_realtime_ppe_detection():
     class PpeDetectionTransfromer(VideoTransformerBase):
         def __init__(self) -> None:
-            h,w = None, None
             self.frame_cur = 0
             self.bounding_boxes = []
             self.confidences = []
             self.class_numbers = []
 
             self.network = cv2.dnn.readNetFromDarknet('./yolo/yolov3_ppe_test.cfg',
-                             './yolo/yolov3_ppe_train_9000.weights')
+                                                      './yolo/yolov3_ppe_train_9000.weights')
 
-            self.layers_names_all = self.network.getLayerNames() 
+            self.layers_names_all = self.network.getLayerNames()
             self.layers_names_output = [self.layers_names_all[i[0] - 1] for i in self.network.getUnconnectedOutLayers()]
 
             with open('yolo/class.names') as f:
@@ -283,222 +170,89 @@ def app_ppe_detection():
 
             self.colours = np.random.randint(0, 255, size=(len(self.labels), 3), dtype='uint8')
             self.results = None
-            
-         
+
         def transform(self, frame: av.VideoFrame) -> np.ndarray:
             probability_minimum = 0.7
             threshold = 0.3
             bounding_boxes = []
             confidences = []
             class_numbers = []
-            
-            startTime = time.time()
-            nowTime = time.time()
-           
+
             frame = frame.to_ndarray(format="bgr24")
-#             print('frame_shape: ', frame)
             small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-            
+
             h, w = small_frame.shape[:2]
-            
+
             if self.frame_cur == 0 or self.frame_cur % 5 == 0:
                 blob = cv2.dnn.blobFromImage(small_frame, 1 / 255.0, (416, 416),
-                                         swapRB=True, crop=False)
+                                             swapRB=True, crop=False)
                 self.network.setInput(blob)
                 output_from_network = self.network.forward(self.layers_names_output)
 
-
                 for result in output_from_network:
 
-                        for detected_objects in result:
-                            scores = detected_objects[5:]
-                            class_current = np.argmax(scores)
-                            confidence_current = scores[class_current]
-                            if confidence_current > probability_minimum:
-                                    box_current = detected_objects[0:4] * np.array([w, h, w, h])
-                                    x_center, y_center, box_width, box_height = box_current
-                                    x_min = int(x_center - (box_width / 2))
-                                    y_min = int(y_center - (box_height / 2))
-                                    bounding_boxes.append([x_min, y_min,
-                                               int(box_width), int(box_height)])
-                                    confidences.append(float(confidence_current))
-                                    class_numbers.append(class_current)
-                            self.bounding_boxes = bounding_boxes
-                            self.confidences = confidences
-                            self.class_numbers = class_numbers
+                    for detected_objects in result:
+                        scores = detected_objects[5:]
+                        class_current = np.argmax(scores)
+                        confidence_current = scores[class_current]
+                        if confidence_current > probability_minimum:
+                            box_current = detected_objects[0:4] * np.array([w, h, w, h])
+                            x_center, y_center, box_width, box_height = box_current
+                            x_min = int(x_center - (box_width / 2))
+                            y_min = int(y_center - (box_height / 2))
+                            bounding_boxes.append([x_min, y_min,
+                                                   int(box_width), int(box_height)])
+                            confidences.append(float(confidence_current))
+                            class_numbers.append(class_current)
+                        self.bounding_boxes = bounding_boxes
+                        self.confidences = confidences
+                        self.class_numbers = class_numbers
 
                 self.results = cv2.dnn.NMSBoxes(bounding_boxes, confidences, probability_minimum, threshold)
 
                 if len(self.results) > 0:
                     for i in self.results.flatten():
-                        x_min, y_min = 4*bounding_boxes[i][0], 4*bounding_boxes[i][1]
-                        box_width, box_height = 4*bounding_boxes[i][2], 4*bounding_boxes[i][3]
+                        x_min, y_min = 4 * bounding_boxes[i][0], 4 * bounding_boxes[i][1]
+                        box_width, box_height = 4 * bounding_boxes[i][2], 4 * bounding_boxes[i][3]
                         colour_box_current = self.colours[class_numbers[i]].tolist()
 
                         cv2.rectangle(frame, (x_min, y_min),
-                                  (x_min + box_width, y_min + box_height),
-                                  colour_box_current, 2)
+                                      (x_min + box_width, y_min + box_height),
+                                      colour_box_current, 2)
 
                         text_box_current = '{}: {:.4f}'.format(self.labels[int(class_numbers[i])],
-                                                           confidences[i])
+                                                               confidences[i])
 
                         cv2.putText(frame, text_box_current, (x_min, y_min - 5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
-                        
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
+
             else:
                 if len(self.results) > 0:
                     for i in self.results.flatten():
-                        x_min, y_min = 4*self.bounding_boxes[i][0], 4*self.bounding_boxes[i][1]
-                        box_width, box_height = 4*self.bounding_boxes[i][2], 4*self.bounding_boxes[i][3]
+                        x_min, y_min = 4 * self.bounding_boxes[i][0], 4 * self.bounding_boxes[i][1]
+                        box_width, box_height = 4 * self.bounding_boxes[i][2], 4 * self.bounding_boxes[i][3]
                         colour_box_current = self.colours[self.class_numbers[i]].tolist()
 
                         cv2.rectangle(frame, (x_min, y_min),
-                                  (x_min + box_width, y_min + box_height),
-                                  colour_box_current, 2)
+                                      (x_min + box_width, y_min + box_height),
+                                      colour_box_current, 2)
 
                         text_box_current = '{}: {:.4f}'.format(self.labels[int(self.class_numbers[i])],
-                                                           self.confidences[i])
+                                                               self.confidences[i])
 
                         cv2.putText(frame, text_box_current, (x_min, y_min - 5),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
-                
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour_box_current, 2)
 
-            print('FPS {:.1f}'.format(1 / (time.time() - startTime)))
-            startTime = time.time() # reset time
             self.frame_cur += 1
-            
+
             return frame
 
-    webrtc_ctx = webrtc_streamer(
-        key="ppe-detection",
+    webrtc_streamer(
+        key="real-ppe-detection",
         mode=WebRtcMode.SENDRECV,
         client_settings=WEBRTC_CLIENT_SETTINGS,
         video_transformer_factory=PpeDetectionTransfromer,
         async_transform=True,
-    )
-
-
-def app_video_filters():
-    """ Video transforms with OpenCV """
-
-    class OpenCVVideoTransformer(VideoTransformerBase):
-        type: Literal["noop", "cartoon", "edges", "rotate"]
-
-        def __init__(self) -> None:
-            self.type = "noop"
-
-        def transform(self, frame: av.VideoFrame) -> av.VideoFrame:
-            img = frame.to_ndarray(format="bgr24")
-
-            if self.type == "noop":
-                pass
-            elif self.type == "cartoon":
-                # prepare color
-                img_color = cv2.pyrDown(cv2.pyrDown(img))
-                for _ in range(6):
-                    img_color = cv2.bilateralFilter(img_color, 9, 9, 7)
-                img_color = cv2.pyrUp(cv2.pyrUp(img_color))
-
-                # prepare edges
-                img_edges = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-                img_edges = cv2.adaptiveThreshold(
-                    cv2.medianBlur(img_edges, 7),
-                    255,
-                    cv2.ADAPTIVE_THRESH_MEAN_C,
-                    cv2.THRESH_BINARY,
-                    9,
-                    2,
-                )
-                img_edges = cv2.cvtColor(img_edges, cv2.COLOR_GRAY2RGB)
-
-                # combine color and edges
-                img = cv2.bitwise_and(img_color, img_edges)
-            elif self.type == "edges":
-                # perform edge detection
-                img = cv2.cvtColor(cv2.Canny(img, 100, 200), cv2.COLOR_GRAY2BGR)
-            elif self.type == "rotate":
-                # rotate image
-                rows, cols, _ = img.shape
-                M = cv2.getRotationMatrix2D((cols / 2, rows / 2), frame.time * 45, 1)
-                img = cv2.warpAffine(img, M, (cols, rows))
-
-            return img
-
-    webrtc_ctx = webrtc_streamer(
-        key="opencv-filter",
-        mode=WebRtcMode.SENDRECV,
-        client_settings=WEBRTC_CLIENT_SETTINGS,
-        video_transformer_factory=OpenCVVideoTransformer,
-        async_transform=True,
-    )
-
-    transform_type = st.radio(
-        "Select transform type", ("noop", "cartoon", "edges", "rotate")
-    )
-    if webrtc_ctx.video_transformer:
-        webrtc_ctx.video_transformer.type = transform_type
-
-    st.markdown(
-        "This demo is based on "
-        "https://github.com/aiortc/aiortc/blob/2362e6d1f0c730a0f8c387bbea76546775ad2fe8/examples/server/server.py#L34. "  # noqa: E501
-        "Many thanks to the project."
-    )
-
-
-def app_streaming():
-    """ Media streamings """
-    MEDIAFILES = {
-        "big_buck_bunny_720p_2mb.mp4": {
-            "url": "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_2mb.mp4",  # noqa: E501
-            "local_file_path": HERE / "data/big_buck_bunny_720p_2mb.mp4",
-            "type": "video",
-        },
-        "big_buck_bunny_720p_10mb.mp4": {
-            "url": "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_10mb.mp4",  # noqa: E501
-            "local_file_path": HERE / "data/big_buck_bunny_720p_10mb.mp4",
-            "type": "video",
-        },
-        "file_example_MP3_700KB.mp3": {
-            "url": "https://file-examples-com.github.io/uploads/2017/11/file_example_MP3_700KB.mp3",  # noqa: E501
-            "local_file_path": HERE / "data/file_example_MP3_700KB.mp3",
-            "type": "audio",
-        },
-        "file_example_MP3_5MG.mp3": {
-            "url": "https://file-examples-com.github.io/uploads/2017/11/file_example_MP3_5MG.mp3",  # noqa: E501
-            "local_file_path": HERE / "data/file_example_MP3_5MG.mp3",
-            "type": "audio",
-        },
-    }
-    media_file_label = st.radio(
-        "Select a media file to stream", tuple(MEDIAFILES.keys())
-    )
-    media_file_info = MEDIAFILES[media_file_label]
-    download_file(media_file_info["url"], media_file_info["local_file_path"])
-
-    def create_player():
-        return MediaPlayer(str(media_file_info["local_file_path"]))
-
-        # NOTE: To stream the video from webcam, use the code below.
-        # return MediaPlayer(
-        #     "1:none",
-        #     format="avfoundation",
-        #     options={"framerate": "30", "video_size": "1280x720"},
-        # )
-
-    WEBRTC_CLIENT_SETTINGS.update(
-        {
-            "media_stream_constraints": {
-                "video": media_file_info["type"] == "video",
-                "audio": media_file_info["type"] == "audio",
-            }
-        }
-    )
-
-    webrtc_streamer(
-        key=f"media-streaming-{media_file_label}",
-        mode=WebRtcMode.RECVONLY,
-        client_settings=WEBRTC_CLIENT_SETTINGS,
-        player_factory=create_player,
     )
 
 
