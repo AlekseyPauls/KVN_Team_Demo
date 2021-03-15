@@ -23,3 +23,5 @@ Choose `Realtime Face Recognition` from left side menu. Click `start`
 ## Personal Protective Equipment detection
 
 Choose `Realtime Personal Protective Equipment detection` from left side menu. Click `start`
+
+### Samruk Hackaton 2021
