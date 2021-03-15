@@ -1,4 +1,6 @@
 # KVN Team Demo
+### Samruk Hackaton 2021
+
 
 ## Setup
 
@@ -24,4 +26,4 @@ Choose `Realtime Face Recognition` from left side menu. Click `start`
 
 Choose `Realtime Personal Protective Equipment detection` from left side menu. Click `start`
 
-### Samruk Hackaton 2021
+
